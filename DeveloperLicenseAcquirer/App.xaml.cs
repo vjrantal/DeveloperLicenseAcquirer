@@ -15,39 +15,57 @@ namespace DeveloperLicenseAcquirer
 
         private void Application_Startup(object sender, StartupEventArgs e)
         {
-            if (e.Args.Length > 0 && e.Args.Length < 4)
+            if (e.Args.Length == 3)
             {
                 tailoredDeployPath = e.Args[0];
                 username = e.Args[1];
                 password = e.Args[2];
 
-                var processStartInfo = new ProcessStartInfo(tailoredDeployPath, "AcquireDeveloperLicense");
+                Console.WriteLine("Got the right amount of arguments");
+                Console.WriteLine("The given TailoredDeploy executable path was: " + tailoredDeployPath);
 
-                var process = Process.Start(processStartInfo);
-                process.WaitForInputIdle();
+                ProcessStartInfo processStartInfo = new ProcessStartInfo(tailoredDeployPath, "AcquireDeveloperLicense");
+
+                Process process = Process.Start(processStartInfo);
+                bool reachedIdleState = process.WaitForInputIdle();
+                Console.WriteLine("TailoredDeploy process reached idle state: " + reachedIdleState);
 
                 Thread.Sleep(1000);
 
-                var agreementWindow = AutomationElement.RootElement.FindFirst(TreeScope.Children,
+                AutomationElementCollection topLevelWindows = AutomationElement.RootElement.FindAll(TreeScope.Children,
                     new PropertyCondition(AutomationElement.ProcessIdProperty, process.Id));
+                AutomationElement agreementWindow = null;
+                foreach (AutomationElement topLevelWindow in topLevelWindows)
+                {
+                    Console.WriteLine("Found top level window with title: " + topLevelWindow.Current.Name);
+                    if (topLevelWindow.Current.Name == "Developer License")
+                    {
+                        agreementWindow = topLevelWindow;
+                    }
+                }
 
                 var iAgreeButton = agreementWindow.FindAll(TreeScope.Children, System.Windows.Automation.Condition.TrueCondition)[0]
-                                                    .FindAll(TreeScope.Children, System.Windows.Automation.Condition.TrueCondition)[2];
-
+                                                  .FindAll(TreeScope.Children, System.Windows.Automation.Condition.TrueCondition)[2];
+                Console.WriteLine("The name of the I agree button: " + iAgreeButton.Current.Name);
                 var buttonPattern = iAgreeButton.GetCurrentPattern(AutomationPattern.LookupById(InvokePattern.Pattern.Id)) as InvokePattern;
                 buttonPattern.Invoke();
 
-                Thread.Sleep(10000);
+                Thread.Sleep(5000);
 
                 var ongoingProcesses = Process.GetProcessesByName("dllhost");
                 AutomationElement credentialsWindow = null;
                 foreach (Process ongoingProcess in ongoingProcesses)
                 {
-                    AutomationElementCollection credentialsWindows = AutomationElement.RootElement.FindAll(TreeScope.Children,
+                    Console.WriteLine("Investigating windows from process: " + ongoingProcess.ProcessName);
+                    AutomationElementCollection processWindows = AutomationElement.RootElement.FindAll(TreeScope.Children,
                         new PropertyCondition(AutomationElement.ProcessIdProperty, ongoingProcess.Id));
-                    if (credentialsWindows.Count > 0 && credentialsWindows[0].Current.Name == "Developer License")
+                    if (processWindows.Count > 0)
                     {
-                        credentialsWindow = credentialsWindows[0];
+                        Console.WriteLine("Found window with title: " + processWindows[0].Current.Name);
+                        if (processWindows[0].Current.Name == "Developer License" && ongoingProcess.Id != process.Id)
+                        {
+                            credentialsWindow = processWindows[0];
+                        }
                     }
                 }
 
@@ -84,18 +102,23 @@ namespace DeveloperLicenseAcquirer
                     }
                     catch (System.NullReferenceException)
                     {
-                        // We end up here in case signing in fails
-                        this.Shutdown(1);
+                        // We might end up here in case signing in fails.
+                        Console.WriteLine("Was not able to close the final window");
                     }
+                    Console.WriteLine("License acquisition completed");
                     this.Shutdown(0);
                 }
                 else
                 {
+                    Console.WriteLine("Did not find a windows titled \"Developer License\"");
                     this.Shutdown(1);
                 }
             }
             else
             {
+                Console.WriteLine("Wrong amount of arguments!");
+                Console.WriteLine("Usage:");
+                Console.WriteLine("DeveloperLicenseAcquirer.exe \"<path-to-tailored-deploy-executable\" \"<username>\" \"<password>\"");
                 this.Shutdown(1);
             }
         }
